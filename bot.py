@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # بيانات الاتصال من المتغيرات البيئية
 BOT_TOKEN = os.getenv('BOT_TOKEN', '8526337520:AAEIWegHcbKfnIt3f9UtPCVMGrGrpma4DV8')
-TARGET_GROUP_ID = int(os.getenv('TARGET_GROUP_ID', '-1002469448517'))
+TARGET_GROUP_ID = int(os.getenv('TARGET_GROUP_ID', '-1003402846337'))
 SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://gmtcbemfxirorrsznlcr.supabase.co')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtdGNiZW1meGlyb3Jyc3pubGNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0Njg0OTYsImV4cCI6MjA4MDA0NDQ5Nn0.oc0YeWFgWOx1AyaH3yfsyBWJ3wAQ0jlMHuF6CYPeokA')
 
