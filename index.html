@@ -25,78 +25,119 @@
         .header {
             background: white; padding: 10px 15px; border-bottom: 1px solid var(--border);
             display: flex; justify-content: space-between; align-items: center; z-index: 10;
+            flex-shrink: 0;
         }
         .brand { font-weight: 700; color: var(--primary); font-size: 1.1rem; }
-        .add-btn { background: var(--primary); color: white; border: none; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+        .add-btn { background: var(--primary); color: white; border: none; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: transform 0.2s; }
+        .add-btn:active { transform: scale(0.9); }
 
         /* المحتوى الرئيسي */
         .main-content { flex: 1; overflow-y: auto; padding: 10px; padding-bottom: 80px; }
 
-        /* === شبكة الملفات (3 في الصف) === */
+        /* === شبكة الملفات === */
         .files-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* الكمبيوتر */
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
             gap: 8px;
         }
 
-        /* تعديلات الموبايل القوية */
+        /* تعديلات الموبايل: 3 أعمدة */
         @media (max-width: 768px) {
             .files-grid {
-                grid-template-columns: repeat(3, 1fr) !important; /* إجبار 3 أعمدة */
-                gap: 5px; /* تقليل المسافات */
+                grid-template-columns: repeat(3, 1fr) !important; 
+                gap: 6px;
             }
         }
 
-        /* تصميم البطاقة المصغرة */
+        /* === تصميم البطاقة === */
         .file-card {
             background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
-            overflow: hidden; position: relative; display: flex; flex-direction: column;
-            aspect-ratio: 1 / 1.3; /* نسبة طول للعرض ثابتة */
+            overflow: hidden; 
+            display: flex; flex-direction: column;
+            aspect-ratio: 1 / 1.4; /* نسبة ثابتة للطول والعرض */
+            position: relative;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
 
+        /* حاوية العرض (صورة/فيديو) */
         .file-preview-box {
-            flex: 1; background: #f1f5f9; display: flex; align-items: center; justify-content: center;
-            font-size: 1.8rem; color: var(--text-sub);
+            flex: 1; /* يملأ المساحة المتاحة */
+            background: #f1f5f9; 
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; color: var(--text-sub); 
+            cursor: pointer; 
+            overflow: hidden;
+            position: relative;
+            min-height: 0; /* ضروري لعمل flex بشكل صحيح */
         }
         
-        /* جعل الصور تملأ الحاوية بالكامل */
-        .file-preview-img { width: 100%; height: 100%; object-fit: cover; }
-
-        .file-info { padding: 6px; background: white; }
-        .file-name {
-            font-size: 0.7rem; font-weight: 600; color: var(--text-main);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;
+        /* جعل الوسائط تملأ الحاوية وتقص الزوائد */
+        .file-preview-media { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; /* هذا هو السر في التنسيق */
+            display: block;
         }
 
-        .file-actions { display: flex; gap: 4px; }
+        /* معلومات الملف والأزرار */
+        .file-info { 
+            padding: 6px; 
+            background: white; 
+            flex-shrink: 0; /* يمنع الانكماش */
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .file-name {
+            font-size: 0.65rem; font-weight: 600; color: var(--text-main);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px;
+            text-align: right;
+        }
+
+        .file-actions { display: flex; gap: 5px; }
         .action-btn {
-            flex: 1; border: none; border-radius: 4px; padding: 4px 0;
-            font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; text-decoration: none;
+            flex: 1; border: none; border-radius: 4px; padding: 5px 0;
+            font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: 0.2s;
         }
         .btn-view { background: #eff6ff; color: var(--primary); }
+        .btn-view:hover { background: #dbeafe; }
+        
         .btn-delete { background: #fef2f2; color: var(--danger); }
+        .btn-delete:hover { background: #fee2e2; }
 
         /* نافذة الرفع (Modal) */
         .modal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 100;
+            backdrop-filter: blur(2px);
         }
         .modal.active { display: flex; }
         .modal-content {
-            background: white; width: 90%; max-width: 400px; padding: 20px; border-radius: 12px; text-align: center;
+            background: white; width: 90%; max-width: 350px; padding: 20px; border-radius: 16px; text-align: center;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
         }
         
-        .upload-area {
-            border: 2px dashed var(--primary); padding: 30px; border-radius: 8px; margin-bottom: 15px; cursor: pointer;
+        .upload-area { 
+            border: 2px dashed var(--primary); padding: 25px; border-radius: 12px; margin-bottom: 15px; cursor: pointer; 
+            background: #eff6ff; transition: 0.2s;
         }
+        .upload-area:active { background: #dbeafe; }
         
         /* شريط البحث */
         .search-container { padding: 0 5px 10px 5px; }
         .search-input {
-            width: 100%; padding: 8px 12px; border: 1px solid var(--border);
-            border-radius: 20px; font-family: inherit; font-size: 0.9rem;
+            width: 100%; padding: 10px 15px; border: 1px solid var(--border);
+            border-radius: 12px; font-family: inherit; font-size: 0.9rem;
+            background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
+        .search-input:focus { border-color: var(--primary); outline: none; }
 
+        /* أيقونة التشغيل للفيديو */
+        .play-icon {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.5); color: white; width: 30px; height: 30px;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem; pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -108,29 +149,31 @@
 
     <div class="main-content">
         <div class="search-container">
-            <input type="text" id="search-input" class="search-input" placeholder="🔍 ابحث...">
+            <input type="text" id="search-input" class="search-input" placeholder="🔍 ابحث عن ملف...">
         </div>
 
-        <div id="loading" style="text-align: center; font-size: 0.8rem; color: #888; margin-top: 20px;">جاري التحميل...</div>
+        <div id="loading" style="text-align: center; font-size: 0.8rem; color: #888; margin-top: 20px;">
+            <i class="fa-solid fa-spinner fa-spin"></i> جاري التحميل...
+        </div>
         
         <div id="files-container" class="files-grid"></div>
         
         <div id="empty-state" style="display: none; text-align: center; padding: 40px; color: #888;">
-            <i class="fa-regular fa-folder-open" style="font-size: 2rem;"></i><br>فارغ
+            <i class="fa-regular fa-folder-open" style="font-size: 2rem; margin-bottom: 10px;"></i><br>لا توجد ملفات
         </div>
     </div>
 
     <!-- نافذة الرفع -->
     <div id="upload-modal" class="modal">
         <div class="modal-content">
-            <h3>رفع ملف جديد</h3>
+            <h3 style="margin-bottom: 15px;">رفع ملف جديد</h3>
             <div class="upload-area" id="upload-area">
-                <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2rem; color: var(--primary);"></i>
-                <p style="margin-top: 10px; font-size: 0.9rem;">اضغط لاختيار ملف</p>
+                <i class="fa-solid fa-cloud-arrow-up" style="font-size: 2.5rem; color: var(--primary);"></i>
+                <p style="margin-top: 10px; font-size: 0.9rem; color: var(--text-sub);">اضغط لاختيار ملف</p>
             </div>
             <input type="file" id="file-input" style="display: none;">
-            <div id="upload-status" style="font-size: 0.85rem; margin-bottom: 10px;"></div>
-            <button onclick="toggleModal(false)" style="padding: 8px 20px; border: none; background: #eee; border-radius: 6px;">إغلاق</button>
+            <div id="upload-status" style="font-size: 0.85rem; margin-bottom: 15px; min-height: 20px;"></div>
+            <button onclick="toggleModal(false)" style="padding: 10px 30px; border: none; background: #f1f5f9; border-radius: 8px; font-weight: 600; color: var(--text-sub);">إغلاق</button>
         </div>
     </div>
 
@@ -142,7 +185,6 @@
 
         let allFiles = [];
 
-        // === وظائف العرض ===
         async function loadFiles() {
             const { data, error } = await supabase.from('files').select('*').order('created_at', { ascending: false });
             if (!error) {
@@ -164,30 +206,41 @@
             }
 
             files.forEach(file => {
-                let previewContent = '';
-                // إذا كانت صورة، اعرضها
+                const streamUrl = `/stream/${file.telegram_file_id}`;
+                let previewHTML = '';
+
+                // منطق عرض المعاينة (صورة أو فيديو)
                 if (file.file_type === 'image' || file.mime_type?.startsWith('image/')) {
-                    // نستخدم بروكسي بسيط لعرض الصور إذا كانت الروابط لا تعمل مباشرة، أو الرابط المباشر
-                    previewContent = `<img src="${file.file_url}" class="file-preview-img" loading="lazy">`;
+                    // عرض الصورة مع معالجة الخطأ
+                    previewHTML = `<img src="${streamUrl}" class="file-preview-media" loading="lazy" onerror="this.parentElement.innerHTML='<i class=\\'fa-regular fa-image\\'></i>'">`;
+                } else if (file.file_type === 'video' || file.mime_type?.startsWith('video/')) {
+                    // عرض فيديو صامت كمعاينة
+                    previewHTML = `
+                        <video src="${streamUrl}#t=0.1" class="file-preview-media" muted playsinline preload="metadata"></video>
+                        <div class="play-icon"><i class="fa-solid fa-play"></i></div>
+                    `;
                 } else {
-                    let icon = 'fa-file';
-                    if (file.file_type === 'video') icon = 'fa-video';
+                    // أيقونات للملفات الأخرى
+                    let icon = 'fa-file-lines';
                     if (file.file_type === 'audio') icon = 'fa-music';
-                    previewContent = `<i class="fa-solid ${icon}"></i>`;
+                    previewHTML = `<i class="fa-solid ${icon}" style="font-size: 2rem;"></i>`;
                 }
 
                 const card = document.createElement('div');
                 card.className = 'file-card';
-                // لاحظ زر الحذف الذي يستدعي deleteFile
                 card.innerHTML = `
-                    <div class="file-preview-box" onclick="window.open('${file.file_url}', '_blank')">
-                        ${previewContent}
+                    <div class="file-preview-box" onclick="window.open('${streamUrl}', '_blank')">
+                        ${previewHTML}
                     </div>
                     <div class="file-info">
                         <div class="file-name">${file.file_name}</div>
                         <div class="file-actions">
-                            <a href="${file.file_url}" target="_blank" class="action-btn btn-view"><i class="fa-solid fa-eye"></i></a>
-                            <button onclick="deleteFile(${file.id}, ${file.message_id}, this)" class="action-btn btn-delete"><i class="fa-solid fa-trash"></i></button>
+                            <a href="${streamUrl}" target="_blank" class="action-btn btn-view">
+                                <i class="fa-solid fa-eye"></i>
+                            </a>
+                            <button onclick="deleteFile(${file.id}, ${file.message_id}, this)" class="action-btn btn-delete">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
                         </div>
                     </div>
                 `;
@@ -195,13 +248,12 @@
             });
         }
 
-        // === وظيفة الحذف (ترسل طلب للسيرفر ليحذف من تليجرام وقاعدة البيانات) ===
         async function deleteFile(dbId, msgId, btnElement) {
-            if (!confirm('هل أنت متأكد من الحذف؟ سيتم حذفه من المجموعة أيضاً.')) return;
+            if (!confirm('حذف الملف نهائياً؟')) return;
 
-            // تغيير شكل الزر ليدل على التحميل
-            const originalContent = btnElement.innerHTML;
-            btnElement.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            const icon = btnElement.querySelector('i');
+            const originalClass = icon.className;
+            icon.className = 'fa-solid fa-spinner fa-spin';
             btnElement.disabled = true;
 
             try {
@@ -210,68 +262,55 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: dbId, message_id: msgId })
                 });
-
                 const result = await response.json();
-
                 if (result.success) {
-                    // حذف الكارت من الشاشة فوراً
-                    btnElement.closest('.file-card').remove();
+                    btnElement.closest('.file-card').style.transform = 'scale(0)';
+                    setTimeout(() => btnElement.closest('.file-card').remove(), 200);
                 } else {
-                    alert('فشل الحذف: ' + result.error);
-                    btnElement.innerHTML = originalContent;
+                    alert('فشل الحذف');
+                    icon.className = originalClass;
                     btnElement.disabled = false;
                 }
             } catch (error) {
-                console.error(error);
-                alert('حدث خطأ في الاتصال');
-                btnElement.innerHTML = originalContent;
+                alert('خطأ في الاتصال');
+                icon.className = originalClass;
                 btnElement.disabled = false;
             }
         }
 
-        // === وظائف الرفع ===
+        // إعدادات الرفع والبحث
         const uploadArea = document.getElementById('upload-area');
         const fileInput = document.getElementById('file-input');
 
-        function toggleModal(show) {
-            document.getElementById('upload-modal').classList.toggle('active', show);
-        }
-
+        function toggleModal(show) { document.getElementById('upload-modal').classList.toggle('active', show); }
         uploadArea.onclick = () => fileInput.click();
-
+        
         fileInput.onchange = async (e) => {
             if (e.target.files.length === 0) return;
             const file = e.target.files[0];
-            
-            document.getElementById('upload-status').innerHTML = '⏳ جاري الرفع...';
+            document.getElementById('upload-status').innerHTML = '<span style="color:var(--primary)"><i class="fa-solid fa-spinner fa-spin"></i> جاري الرفع...</span>';
             
             const formData = new FormData();
             formData.append('file', file);
-
+            
             try {
                 const res = await fetch('/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                
                 if (data.success) {
-                    toggleModal(false);
-                    loadFiles(); // تحديث القائمة
-                    document.getElementById('upload-status').innerHTML = '';
-                    fileInput.value = '';
+                    document.getElementById('upload-status').innerHTML = '<span style="color:green">✅ تم الرفع بنجاح</span>';
+                    setTimeout(() => { toggleModal(false); loadFiles(); document.getElementById('upload-status').innerHTML = ''; fileInput.value = ''; }, 1000);
                 } else {
-                    document.getElementById('upload-status').innerHTML = '❌ فشل الرفع';
+                    document.getElementById('upload-status').innerHTML = '<span style="color:red">❌ فشل الرفع</span>';
                 }
-            } catch (err) {
-                document.getElementById('upload-status').innerHTML = '❌ خطأ';
-            }
+            } catch (err) { document.getElementById('upload-status').innerHTML = '<span style="color:red">❌ خطأ في الاتصال</span>'; }
         };
 
-        // البحث
         document.getElementById('search-input').oninput = (e) => {
             const term = e.target.value.toLowerCase();
             const filtered = allFiles.filter(f => f.file_name.toLowerCase().includes(term));
             displayFiles(filtered);
         };
-
+        
         loadFiles();
     </script>
 </body>
