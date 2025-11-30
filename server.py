@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Flask Server مع ميزة التنظيف الذاتي (Auto-Cleanup)
-"""
 
 import os
 import logging
@@ -18,6 +15,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='.')
 CORS(app)
 
+# المتغيرات البيئية
 BOT_TOKEN = os.getenv('BOT_TOKEN', '8526337520:AAEIWegHcbKfnIt3f9UtPCVMGrGrpma4DV8')
 TARGET_GROUP_ID = os.getenv('TARGET_GROUP_ID', '-1002469448517')
 SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://gmtcbemfxirorrsznlcr.supabase.co')
@@ -39,32 +37,36 @@ def index():
 @app.route('/stream/<file_id>')
 def stream_file(file_id):
     """
-    بث الملف + التنظيف الذاتي عند الحذف من تليجرام
+    بث الملف مع إجبار المتصفح على العرض (Inline) والتنظيف التلقائي
     """
     try:
-        # 1. محاولة جلب مسار الملف من تليجرام
+        # 1. جلب معلومات الملف من تليجرام
         r = requests.get(f"{TELEGRAM_API_URL}/getFile?file_id={file_id}")
         
-        # 🚨 التنظيف الذاتي: إذا قال تليجرام الملف غير موجود (لأنه حذف من القناة)
-        if not r.ok or not r.json().get('ok'):
-            error_desc = r.json().get('description', '')
-            if "Bad Request: file is temporarily unavailable" in error_desc or "not found" in error_desc.lower():
-                logger.warning(f"⚠️ الملف {file_id} محذوف من تليجرام. جاري حذفه من قاعدة البيانات...")
-                # حذف من Supabase فوراً
-                supabase.table('files').delete().eq('telegram_file_id', file_id).execute()
-                return "File deleted from Telegram", 404
-            
-            return "Telegram Error", 404
+        # 🚨 التنظيف الذاتي الصارم: أي خطأ من تليجرام يعني الملف غير موجود
+        if r.status_code != 200 or not r.json().get('ok'):
+            logger.warning(f"⚠️ الملف {file_id} غير موجود في تليجرام. جاري الحذف...")
+            # حذف فوري من Supabase
+            supabase.table('files').delete().eq('telegram_file_id', file_id).execute()
+            return "File deleted", 404
             
         file_path = r.json()['result']['file_path']
         download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
         
-        # 2. بدء البث
+        # 2. طلب البث من تليجرام
         req = requests.get(download_url, stream=True)
+        
+        # الحصول على نوع الملف الحقيقي (MIME Type)
+        content_type = req.headers.get('content-type')
+        
+        # 3. إرسال الاستجابة مع إجبار العرض (inline)
         return Response(
             stream_with_context(req.iter_content(chunk_size=1024 * 1024)),
-            content_type=req.headers.get('content-type'),
-            headers={"Content-Disposition": "inline"}
+            mimetype=content_type, # ضروري جداً للعرض
+            headers={
+                "Content-Disposition": "inline", # يجبر المتصفح على العرض وعدم التحميل
+                "Cache-Control": "public, max-age=3600" # تخزين مؤقت لتسريع العرض
+            }
         )
     except Exception as e:
         logger.error(f"Stream Error: {e}")
