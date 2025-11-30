@@ -15,50 +15,25 @@ from flask import Flask, request, jsonify, send_from_directory, Response, stream
 from flask_cors import CORS
 import requests
 from supabase import create_client, Client
-from auth import AuthManager
-from permissions import PermissionManager
+from ..core.auth import AuthManager
+from ..core.permissions import PermissionManager
+from ..core.config import config
+from ..utils.email import email_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='.')
+app = Flask(__name__, template_folder='../templates', static_folder='../static')
 CORS(app)
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 
-# المتغيرات البيئية
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-TARGET_GROUP_ID_STR = os.getenv('TARGET_GROUP_ID')
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+# التحقق من الإعدادات
+config.validate()
 
-def validate_environment_variables() -> None:
-    """التحقق من وجود جميع المتغيرات البيئية المطلوبة"""
-    missing_vars = []
-    
-    if not BOT_TOKEN:
-        missing_vars.append('BOT_TOKEN')
-    if not TARGET_GROUP_ID_STR:
-        missing_vars.append('TARGET_GROUP_ID')
-    if not SUPABASE_URL:
-        missing_vars.append('SUPABASE_URL')
-    if not SUPABASE_KEY:
-        missing_vars.append('SUPABASE_KEY')
-    
-    if missing_vars:
-        error_msg = f"❌ خطأ: المتغيرات البيئية التالية مفقودة: {', '.join(missing_vars)}\n"
-        error_msg += "يرجى تعيينها في ملف .env أو في متغيرات البيئة."
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-validate_environment_variables()
-
-try:
-    TARGET_GROUP_ID = int(TARGET_GROUP_ID_STR)
-except ValueError:
-    raise ValueError(f"❌ خطأ: TARGET_GROUP_ID يجب أن يكون رقماً صحيحاً")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+# إنشاء عميل Supabase
+supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+TELEGRAM_API_URL = config.TELEGRAM_API_URL
+TARGET_GROUP_ID = config.TARGET_GROUP_ID
 
 # إنشاء مديري المصادقة والصلاحيات
 auth_manager = AuthManager(supabase)
