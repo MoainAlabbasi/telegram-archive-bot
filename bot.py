@@ -3,13 +3,14 @@
 """
 Telegram File Archive Bot
 يستمع للمجموعة ويحفظ روابط الملفات في Supabase
-النسخة المحسنة: تدعم الرسائل المحولة (Forwarded) وتتجنب الأخطاء
+النسخة المحسنة: معالج موحد، Type Hints، أمان محسّن
 """
 
 import os
 import logging
 from datetime import datetime
-from telegram import Update
+from typing import Optional, Dict, Any
+from telegram import Update, PhotoSize, Document, Video, Audio
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from supabase import create_client, Client
 
@@ -20,213 +21,202 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# بيانات الاتصال من المتغيرات البيئية
-BOT_TOKEN = os.getenv('BOT_TOKEN', '8526337520:AAEIWegHcbKfnIt3f9UtPCVMGrGrpma4DV8')
-TARGET_GROUP_ID = int(os.getenv('TARGET_GROUP_ID', '-1003402846337'))
-SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://gmtcbemfxirorrsznlcr.supabase.co')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdtdGNiZW1meGlyb3Jyc3pubGNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0Njg0OTYsImV4cCI6MjA4MDA0NDQ5Nn0.oc0YeWFgWOx1AyaH3yfsyBWJ3wAQ0jlMHuF6CYPeokA')
+# بيانات الاتصال من المتغيرات البيئية (بدون قيم افتراضية للأمان)
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+TARGET_GROUP_ID_STR = os.getenv('TARGET_GROUP_ID')
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY')
+
+# التحقق من وجود جميع المتغيرات المطلوبة
+def validate_environment_variables() -> None:
+    """التحقق من وجود جميع المتغيرات البيئية المطلوبة"""
+    missing_vars = []
+    
+    if not BOT_TOKEN:
+        missing_vars.append('BOT_TOKEN')
+    if not TARGET_GROUP_ID_STR:
+        missing_vars.append('TARGET_GROUP_ID')
+    if not SUPABASE_URL:
+        missing_vars.append('SUPABASE_URL')
+    if not SUPABASE_KEY:
+        missing_vars.append('SUPABASE_KEY')
+    
+    if missing_vars:
+        error_msg = f"❌ خطأ: المتغيرات البيئية التالية مفقودة: {', '.join(missing_vars)}\n"
+        error_msg += "يرجى تعيينها في ملف .env أو في متغيرات البيئة."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+# التحقق من المتغيرات
+validate_environment_variables()
+
+# تحويل TARGET_GROUP_ID إلى رقم صحيح
+try:
+    TARGET_GROUP_ID = int(TARGET_GROUP_ID_STR)
+except ValueError:
+    raise ValueError(f"❌ خطأ: TARGET_GROUP_ID يجب أن يكون رقماً صحيحاً، القيمة الحالية: {TARGET_GROUP_ID_STR}")
 
 # إنشاء عميل Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالج استلام الملفات من المجموعة"""
+def get_file_type_from_mime(mime_type: str) -> str:
+    """
+    تحديد نوع الملف من MIME type
+    
+    Args:
+        mime_type: نوع MIME للملف
+        
+    Returns:
+        نوع الملف (image, video, audio, document)
+    """
+    if mime_type.startswith("image/"):
+        return "image"
+    elif mime_type.startswith("video/"):
+        return "video"
+    elif mime_type.startswith("audio/"):
+        return "audio"
+    return "document"
+
+def create_file_data(
+    file_name: str,
+    file_size: int,
+    file_type: str,
+    mime_type: str,
+    file_id: str,
+    file_url: str,
+    message_id: int
+) -> Dict[str, Any]:
+    """
+    إنشاء بيانات الملف للحفظ في قاعدة البيانات
+    
+    Args:
+        file_name: اسم الملف
+        file_size: حجم الملف بالبايت
+        file_type: نوع الملف
+        mime_type: MIME type
+        file_id: معرف الملف في تليجرام
+        file_url: رابط الملف
+        message_id: معرف الرسالة
+        
+    Returns:
+        قاموس يحتوي على بيانات الملف
+    """
+    return {
+        "file_name": file_name,
+        "file_size": file_size,
+        "file_type": file_type,
+        "mime_type": mime_type,
+        "telegram_file_id": file_id,
+        "file_url": file_url,
+        "message_id": message_id,
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    معالج موحد لجميع أنواع الملفات (مستندات، صور، فيديوهات، صوتيات)
+    يدعم الرسائل المحولة (Forwarded Messages)
+    
+    Args:
+        update: كائن التحديث من تليجرام
+        context: سياق التطبيق
+    """
     
     # التحقق من أن الرسالة من المجموعة المستهدفة
     if update.effective_chat.id != TARGET_GROUP_ID:
-        # logger.info(f"تجاهل رسالة من مجموعة غير مستهدفة: {update.effective_chat.id}")
         return
     
     try:
-        # استخدام effective_message بدلاً من message لتجنب الأخطاء في الرسائل المحولة
+        # استخدام effective_message لدعم الرسائل المحولة
         message = update.effective_message
         if not message:
             return
 
-        document = message.document
-        if not document:
+        # متغيرات لتخزين معلومات الملف
+        file_obj: Optional[Any] = None
+        file_type: Optional[str] = None
+        file_name: Optional[str] = None
+        mime_type: Optional[str] = None
+        
+        # تحديد نوع الملف واستخراج معلوماته
+        if message.document:
+            file_obj = message.document
+            mime_type = file_obj.mime_type or "application/octet-stream"
+            file_type = get_file_type_from_mime(mime_type)
+            file_name = file_obj.file_name or "unknown_file"
+            
+        elif message.photo:
+            file_obj = message.photo[-1]  # أكبر حجم للصورة
+            file_type = "image"
+            mime_type = "image/jpeg"
+            file_name = f"photo_{message.message_id}.jpg"
+            
+        elif message.video:
+            file_obj = message.video
+            file_type = "video"
+            mime_type = file_obj.mime_type or "video/mp4"
+            file_name = file_obj.file_name or f"video_{message.message_id}.mp4"
+            
+        elif message.audio:
+            file_obj = message.audio
+            file_type = "audio"
+            mime_type = file_obj.mime_type or "audio/mpeg"
+            file_name = file_obj.file_name or f"audio_{message.message_id}.mp3"
+        
+        else:
+            # لا يوجد ملف في الرسالة
             return
         
         # استخراج معلومات الملف
-        file_id = document.file_id
-        file_name = document.file_name or "unknown_file"
-        file_size = document.file_size or 0
-        mime_type = document.mime_type or "application/octet-stream"
+        file_id = file_obj.file_id
+        file_size = getattr(file_obj, 'file_size', 0) or 0
         
-        # تحديد نوع الملف
-        file_type = "document"
-        if mime_type.startswith("image/"):
-            file_type = "image"
-        elif mime_type.startswith("video/"):
-            file_type = "video"
-        elif mime_type.startswith("audio/"):
-            file_type = "audio"
-        
-        # الحصول على رابط الملف
+        # الحصول على رابط الملف من تليجرام
         file = await context.bot.get_file(file_id)
         file_url = file.file_path
         
-        # حفظ البيانات في Supabase
-        data = {
-            "file_name": file_name,
-            "file_size": file_size,
-            "file_type": file_type,
-            "mime_type": mime_type,
-            "telegram_file_id": file_id,
-            "file_url": file_url,
-            "message_id": message.message_id,
-            "created_at": datetime.utcnow().isoformat()
-        }
+        # إنشاء بيانات الملف
+        data = create_file_data(
+            file_name=file_name,
+            file_size=file_size,
+            file_type=file_type,
+            mime_type=mime_type,
+            file_id=file_id,
+            file_url=file_url,
+            message_id=message.message_id
+        )
         
+        # حفظ البيانات في Supabase
         supabase.table('files').insert(data).execute()
-        logger.info(f"✅ تم حفظ الملف: {file_name} ({file_size} bytes)")
+        
+        # تسجيل نجاح العملية
+        logger.info(f"✅ تم حفظ {file_type}: {file_name} ({file_size:,} bytes)")
         
     except Exception as e:
         logger.error(f"❌ خطأ في معالجة الملف: {str(e)}")
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالج استلام الصور من المجموعة"""
-    
-    if update.effective_chat.id != TARGET_GROUP_ID:
-        return
-    
-    try:
-        message = update.effective_message
-        if not message or not message.photo:
-            return
-
-        photo = message.photo[-1]  # أكبر حجم للصورة
-        
-        # استخراج معلومات الصورة
-        file_id = photo.file_id
-        file_size = photo.file_size or 0
-        # تسمية الصورة بناءً على ID الرسالة لأن الصور في تليجرام ليس لها اسم أصلي
-        file_name = f"photo_{message.message_id}.jpg"
-        
-        # الحصول على رابط الصورة
-        file = await context.bot.get_file(file_id)
-        file_url = file.file_path
-        
-        # حفظ البيانات في Supabase
-        data = {
-            "file_name": file_name,
-            "file_size": file_size,
-            "file_type": "image",
-            "mime_type": "image/jpeg",
-            "telegram_file_id": file_id,
-            "file_url": file_url,
-            "message_id": message.message_id,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        
-        supabase.table('files').insert(data).execute()
-        logger.info(f"✅ تم حفظ الصورة: {file_name} ({file_size} bytes)")
-        
-    except Exception as e:
-        logger.error(f"❌ خطأ في معالجة الصورة: {str(e)}")
-
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالج استلام الفيديوهات من المجموعة"""
-    
-    if update.effective_chat.id != TARGET_GROUP_ID:
-        return
-    
-    try:
-        message = update.effective_message
-        if not message:
-            return
-
-        video = message.video
-        if not video:
-            return
-        
-        # استخراج معلومات الفيديو
-        file_id = video.file_id
-        file_name = video.file_name or f"video_{message.message_id}.mp4"
-        file_size = video.file_size or 0
-        mime_type = video.mime_type or "video/mp4"
-        
-        # الحصول على رابط الفيديو
-        file = await context.bot.get_file(file_id)
-        file_url = file.file_path
-        
-        # حفظ البيانات في Supabase
-        data = {
-            "file_name": file_name,
-            "file_size": file_size,
-            "file_type": "video",
-            "mime_type": mime_type,
-            "telegram_file_id": file_id,
-            "file_url": file_url,
-            "message_id": message.message_id,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        
-        supabase.table('files').insert(data).execute()
-        logger.info(f"✅ تم حفظ الفيديو: {file_name} ({file_size} bytes)")
-        
-    except Exception as e:
-        logger.error(f"❌ خطأ في معالجة الفيديو: {str(e)}")
-
-async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالج استلام الملفات الصوتية من المجموعة"""
-    
-    if update.effective_chat.id != TARGET_GROUP_ID:
-        return
-    
-    try:
-        message = update.effective_message
-        if not message:
-            return
-
-        audio = message.audio
-        if not audio:
-            return
-        
-        # استخراج معلومات الملف الصوتي
-        file_id = audio.file_id
-        file_name = audio.file_name or f"audio_{message.message_id}.mp3"
-        file_size = audio.file_size or 0
-        mime_type = audio.mime_type or "audio/mpeg"
-        
-        # الحصول على رابط الملف الصوتي
-        file = await context.bot.get_file(file_id)
-        file_url = file.file_path
-        
-        # حفظ البيانات في Supabase
-        data = {
-            "file_name": file_name,
-            "file_size": file_size,
-            "file_type": "audio",
-            "mime_type": mime_type,
-            "telegram_file_id": file_id,
-            "file_url": file_url,
-            "message_id": message.message_id,
-            "created_at": datetime.utcnow().isoformat()
-        }
-        
-        supabase.table('files').insert(data).execute()
-        logger.info(f"✅ تم حفظ الملف الصوتي: {file_name} ({file_size} bytes)")
-        
-    except Exception as e:
-        logger.error(f"❌ خطأ في معالجة الملف الصوتي: {str(e)}")
-
-def main():
+def main() -> None:
     """نقطة البداية الرئيسية للبوت"""
     
+    logger.info("=" * 60)
     logger.info("🚀 بدء تشغيل بوت أرشفة ملفات تليجرام...")
     logger.info(f"📡 المجموعة المستهدفة: {TARGET_GROUP_ID}")
+    logger.info(f"🔗 Supabase URL: {SUPABASE_URL}")
+    logger.info("=" * 60)
     
     # إنشاء التطبيق
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # إضافة معالجات الرسائل
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    application.add_handler(MessageHandler(filters.AUDIO, handle_audio))
+    # إضافة معالج موحد لجميع أنواع الملفات
+    application.add_handler(MessageHandler(
+        filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO,
+        handle_file
+    ))
     
     logger.info("✅ البوت جاهز ويستمع للرسائل...")
+    logger.info("📝 أنواع الملفات المدعومة: مستندات، صور، فيديوهات، صوتيات")
+    logger.info("🔄 دعم الرسائل المحولة (Forwarded): مفعّل")
+    logger.info("=" * 60)
     
     # تشغيل البوت
     application.run_polling(allowed_updates=Update.ALL_TYPES)

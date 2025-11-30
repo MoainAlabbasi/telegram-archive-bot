@@ -1,7 +1,15 @@
-python-telegram-bot
-supabase
-python-dotenv
-flask
-flask-cors
-requests
- 
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Database
+supabase==2.3.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Web Server
+flask==3.0.0
+flask-cors==4.0.0
+
+# HTTP Requests
+requests==2.31.0
