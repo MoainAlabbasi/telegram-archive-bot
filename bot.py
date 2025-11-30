@@ -3,6 +3,7 @@
 """
 Telegram File Archive Bot
 يستمع للمجموعة ويحفظ روابط الملفات في Supabase
+النسخة المحسنة: تدعم الرسائل المحولة (Forwarded) وتتجنب الأخطاء
 """
 
 import os
@@ -33,13 +34,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # التحقق من أن الرسالة من المجموعة المستهدفة
     if update.effective_chat.id != TARGET_GROUP_ID:
-        logger.info(f"تجاهل رسالة من مجموعة غير مستهدفة: {update.effective_chat.id}")
+        # logger.info(f"تجاهل رسالة من مجموعة غير مستهدفة: {update.effective_chat.id}")
         return
     
     try:
-        message = update.message
+        # استخدام effective_message بدلاً من message لتجنب الأخطاء في الرسائل المحولة
+        message = update.effective_message
+        if not message:
+            return
+
         document = message.document
-        
         if not document:
             return
         
@@ -74,12 +78,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "created_at": datetime.utcnow().isoformat()
         }
         
-        result = supabase.table('files').insert(data).execute()
-        
+        supabase.table('files').insert(data).execute()
         logger.info(f"✅ تم حفظ الملف: {file_name} ({file_size} bytes)")
-        
-        # إرسال رد تأكيد (اختياري)
-        # await message.reply_text(f"✅ تم حفظ الملف: {file_name}")
         
     except Exception as e:
         logger.error(f"❌ خطأ في معالجة الملف: {str(e)}")
@@ -87,17 +87,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالج استلام الصور من المجموعة"""
     
-    # التحقق من أن الرسالة من المجموعة المستهدفة
     if update.effective_chat.id != TARGET_GROUP_ID:
         return
     
     try:
-        message = update.message
+        message = update.effective_message
+        if not message or not message.photo:
+            return
+
         photo = message.photo[-1]  # أكبر حجم للصورة
         
         # استخراج معلومات الصورة
         file_id = photo.file_id
         file_size = photo.file_size or 0
+        # تسمية الصورة بناءً على ID الرسالة لأن الصور في تليجرام ليس لها اسم أصلي
         file_name = f"photo_{message.message_id}.jpg"
         
         # الحصول على رابط الصورة
@@ -116,8 +119,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "created_at": datetime.utcnow().isoformat()
         }
         
-        result = supabase.table('files').insert(data).execute()
-        
+        supabase.table('files').insert(data).execute()
         logger.info(f"✅ تم حفظ الصورة: {file_name} ({file_size} bytes)")
         
     except Exception as e:
@@ -126,14 +128,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالج استلام الفيديوهات من المجموعة"""
     
-    # التحقق من أن الرسالة من المجموعة المستهدفة
     if update.effective_chat.id != TARGET_GROUP_ID:
         return
     
     try:
-        message = update.message
+        message = update.effective_message
+        if not message:
+            return
+
         video = message.video
-        
         if not video:
             return
         
@@ -159,8 +162,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "created_at": datetime.utcnow().isoformat()
         }
         
-        result = supabase.table('files').insert(data).execute()
-        
+        supabase.table('files').insert(data).execute()
         logger.info(f"✅ تم حفظ الفيديو: {file_name} ({file_size} bytes)")
         
     except Exception as e:
@@ -169,14 +171,15 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالج استلام الملفات الصوتية من المجموعة"""
     
-    # التحقق من أن الرسالة من المجموعة المستهدفة
     if update.effective_chat.id != TARGET_GROUP_ID:
         return
     
     try:
-        message = update.message
+        message = update.effective_message
+        if not message:
+            return
+
         audio = message.audio
-        
         if not audio:
             return
         
@@ -202,8 +205,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "created_at": datetime.utcnow().isoformat()
         }
         
-        result = supabase.table('files').insert(data).execute()
-        
+        supabase.table('files').insert(data).execute()
         logger.info(f"✅ تم حفظ الملف الصوتي: {file_name} ({file_size} bytes)")
         
     except Exception as e:
