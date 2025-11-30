@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Telegram File Archive Bot
+Telegram File Archive Bot v3.0
 يستمع للمجموعة ويحفظ روابط الملفات في Supabase
-النسخة المحسنة: معالج موحد، Type Hints، أمان محسّن
+مع دعم حفظ الوصف وتتبع الرافع والتزامن مع قاعدة البيانات
 """
 
 import os
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
-from telegram import Update, PhotoSize, Document, Video, Audio
+from telegram import Update, PhotoSize, Document, Video, Audio, Message
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from supabase import create_client, Client
 
@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# بيانات الاتصال من المتغيرات البيئية (بدون قيم افتراضية للأمان)
+# بيانات الاتصال من المتغيرات البيئية
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_GROUP_ID_STR = os.getenv('TARGET_GROUP_ID')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -84,7 +84,9 @@ def create_file_data(
     mime_type: str,
     file_id: str,
     file_url: str,
-    message_id: int
+    message_id: int,
+    caption: Optional[str] = None,
+    uploaded_by: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     إنشاء بيانات الملف للحفظ في قاعدة البيانات
@@ -97,6 +99,8 @@ def create_file_data(
         file_id: معرف الملف في تليجرام
         file_url: رابط الملف
         message_id: معرف الرسالة
+        caption: الوصف المرافق للملف
+        uploaded_by: معرف المستخدم الذي قام بالرفع
         
     Returns:
         قاموس يحتوي على بيانات الملف
@@ -109,6 +113,8 @@ def create_file_data(
         "telegram_file_id": file_id,
         "file_url": file_url,
         "message_id": message_id,
+        "caption": caption,
+        "uploaded_by": uploaded_by,
         "created_at": datetime.utcnow().isoformat()
     }
 
@@ -116,6 +122,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """
     معالج موحد لجميع أنواع الملفات (مستندات، صور، فيديوهات، صوتيات)
     يدعم الرسائل المحولة (Forwarded Messages)
+    يحفظ الوصف (Caption) ويتتبع الرافع
     
     Args:
         update: كائن التحديث من تليجرام
@@ -137,6 +144,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         file_type: Optional[str] = None
         file_name: Optional[str] = None
         mime_type: Optional[str] = None
+        caption: Optional[str] = message.caption  # حفظ الوصف
         
         # تحديد نوع الملف واستخراج معلوماته
         if message.document:
@@ -183,23 +191,53 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             mime_type=mime_type,
             file_id=file_id,
             file_url=file_url,
-            message_id=message.message_id
+            message_id=message.message_id,
+            caption=caption,
+            uploaded_by=None  # سيتم تعيينه من الموقع عند الرفع
         )
         
         # حفظ البيانات في Supabase
         supabase.table('files').insert(data).execute()
         
         # تسجيل نجاح العملية
-        logger.info(f"✅ تم حفظ {file_type}: {file_name} ({file_size:,} bytes)")
+        caption_info = f" | الوصف: {caption[:30]}..." if caption else ""
+        logger.info(f"✅ تم حفظ {file_type}: {file_name} ({file_size:,} bytes){caption_info}")
         
     except Exception as e:
         logger.error(f"❌ خطأ في معالجة الملف: {str(e)}")
+
+async def handle_deleted_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    معالج لحذف الملفات المحذوفة من تليجرام
+    يتم تفعيله عند حذف رسالة من المجموعة
+    
+    Args:
+        update: كائن التحديث من تليجرام
+        context: سياق التطبيق
+    """
+    try:
+        # التحقق من أن الحذف من المجموعة المستهدفة
+        if update.effective_chat.id != TARGET_GROUP_ID:
+            return
+        
+        # الحصول على معرف الرسالة المحذوفة
+        if hasattr(update, 'message') and update.message:
+            message_id = update.message.message_id
+            
+            # حذف الملف من قاعدة البيانات
+            result = supabase.table('files').delete().eq('message_id', message_id).execute()
+            
+            if result.data:
+                logger.info(f"🗑️ تم حذف الملف المرتبط بالرسالة: {message_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في معالجة الحذف: {str(e)}")
 
 def main() -> None:
     """نقطة البداية الرئيسية للبوت"""
     
     logger.info("=" * 60)
-    logger.info("🚀 بدء تشغيل بوت أرشفة ملفات تليجرام...")
+    logger.info("🚀 بدء تشغيل بوت أرشفة ملفات تليجرام v3.0...")
     logger.info(f"📡 المجموعة المستهدفة: {TARGET_GROUP_ID}")
     logger.info(f"🔗 Supabase URL: {SUPABASE_URL}")
     logger.info("=" * 60)
@@ -213,9 +251,17 @@ def main() -> None:
         handle_file
     ))
     
+    # إضافة معالج للرسائل المحذوفة
+    application.add_handler(MessageHandler(
+        filters.StatusUpdate.DELETED_MESSAGES,
+        handle_deleted_message
+    ))
+    
     logger.info("✅ البوت جاهز ويستمع للرسائل...")
     logger.info("📝 أنواع الملفات المدعومة: مستندات، صور، فيديوهات، صوتيات")
     logger.info("🔄 دعم الرسائل المحولة (Forwarded): مفعّل")
+    logger.info("💾 حفظ الوصف (Caption): مفعّل")
+    logger.info("🔄 تزامن الحذف: مفعّل")
     logger.info("=" * 60)
     
     # تشغيل البوت

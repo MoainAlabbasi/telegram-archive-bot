@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Flask Server للأرشيف
-يوفر API لرفع وعرض وحذف الملفات
-النسخة المحسنة: تنظيف تلقائي، Type Hints، أمان محسّن
+Flask Server v3.0 للأرشيف
+يوفر API لرفع وعرض وحذف الملفات مع نظام مصادقة وصلاحيات
 """
 
 import os
@@ -11,19 +10,22 @@ import logging
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 import requests
 from supabase import create_client, Client
+from auth import AuthManager
+from permissions import PermissionManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='.')
 CORS(app)
+app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 
-# المتغيرات البيئية (بدون قيم افتراضية للأمان)
+# المتغيرات البيئية
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_GROUP_ID_STR = os.getenv('TARGET_GROUP_ID')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -48,28 +50,22 @@ def validate_environment_variables() -> None:
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-# التحقق من المتغيرات
 validate_environment_variables()
 
-# تحويل TARGET_GROUP_ID إلى رقم صحيح
 try:
     TARGET_GROUP_ID = int(TARGET_GROUP_ID_STR)
 except ValueError:
-    raise ValueError(f"❌ خطأ: TARGET_GROUP_ID يجب أن يكون رقماً صحيحاً، القيمة الحالية: {TARGET_GROUP_ID_STR}")
+    raise ValueError(f"❌ خطأ: TARGET_GROUP_ID يجب أن يكون رقماً صحيحاً")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# إنشاء مديري المصادقة والصلاحيات
+auth_manager = AuthManager(supabase)
+permission_manager = PermissionManager(supabase)
+
 def get_file_type(mime_type: str) -> str:
-    """
-    تحديد نوع الملف من MIME type
-    
-    Args:
-        mime_type: نوع MIME للملف
-        
-    Returns:
-        نوع الملف (image, video, audio, document)
-    """
+    """تحديد نوع الملف من MIME type"""
     if mime_type.startswith('image/'):
         return 'image'
     elif mime_type.startswith('video/'):
@@ -78,48 +74,272 @@ def get_file_type(mime_type: str) -> str:
         return 'audio'
     return 'document'
 
+def get_current_user() -> Optional[Dict[str, Any]]:
+    """الحصول على المستخدم الحالي من الجلسة"""
+    session_token = request.headers.get('Authorization')
+    if not session_token:
+        return None
+    
+    success, user_data = auth_manager.verify_session(session_token)
+    if success:
+        return user_data
+    return None
+
+# ========================================
+# Authentication Routes
+# ========================================
+
+@app.route('/api/auth/register/verify', methods=['POST'])
+def verify_registration():
+    """التحقق من بيانات المستخدم (الخطوة 2)"""
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        full_name = data.get('full_name')
+        
+        if not user_id or not full_name:
+            return jsonify({'error': 'البيانات غير مكتملة'}), 400
+        
+        success, db_user_id, message = auth_manager.verify_user_data(user_id, full_name)
+        
+        if success:
+            return jsonify({'success': True, 'user_db_id': db_user_id, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/register/send-otp', methods=['POST'])
+def send_otp():
+    """إرسال رمز OTP (الخطوة 3)"""
+    try:
+        data = request.json
+        user_db_id = data.get('user_db_id')
+        email = data.get('email')
+        
+        if not user_db_id or not email:
+            return jsonify({'error': 'البيانات غير مكتملة'}), 400
+        
+        success, message = auth_manager.send_activation_otp(user_db_id, email)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/register/activate', methods=['POST'])
+def activate_account():
+    """تفعيل الحساب بعد التحقق من OTP"""
+    try:
+        data = request.json
+        user_db_id = data.get('user_db_id')
+        email = data.get('email')
+        otp_code = data.get('otp_code')
+        password = data.get('password')
+        
+        if not all([user_db_id, email, otp_code, password]):
+            return jsonify({'error': 'البيانات غير مكتملة'}), 400
+        
+        success, message = auth_manager.verify_otp_and_activate(user_db_id, email, otp_code, password)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """تسجيل الدخول"""
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({'error': 'البيانات غير مكتملة'}), 400
+        
+        success, user_data, message = auth_manager.login(email, password)
+        
+        if success:
+            return jsonify({'success': True, 'user': user_data, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """تسجيل الخروج"""
+    try:
+        session_token = request.headers.get('Authorization')
+        if not session_token:
+            return jsonify({'error': 'غير مصرح'}), 401
+        
+        auth_manager.logout(session_token)
+        return jsonify({'success': True, 'message': 'تم تسجيل الخروج بنجاح'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/me', methods=['GET'])
+def get_current_user_info():
+    """الحصول على معلومات المستخدم الحالي"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'غير مصرح'}), 401
+    
+    # إضافة الصلاحيات
+    permissions = permission_manager.get_user_permissions(user['user_id'])
+    user['permissions'] = permissions
+    
+    return jsonify({'success': True, 'user': user})
+
+# ========================================
+# Admin Routes
+# ========================================
+
+@app.route('/api/admin/users/create', methods=['POST'])
+def admin_create_user():
+    """إنشاء مستخدم جديد بواسطة الأدمن"""
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return jsonify({'error': 'غير مصرح'}), 403
+    
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        full_name = data.get('full_name')
+        
+        if not user_id or not full_name:
+            return jsonify({'error': 'البيانات غير مكتملة'}), 400
+        
+        success, message = auth_manager.create_user_by_admin(user_id, full_name)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users', methods=['GET'])
+def admin_get_users():
+    """الحصول على جميع المستخدمين"""
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return jsonify({'error': 'غير مصرح'}), 403
+    
+    try:
+        users = permission_manager.get_all_users_with_permissions()
+        return jsonify({'success': True, 'users': users})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/roles', methods=['GET'])
+def admin_get_roles():
+    """الحصول على جميع الصلاحيات"""
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return jsonify({'error': 'غير مصرح'}), 403
+    
+    try:
+        roles = permission_manager.get_all_roles()
+        return jsonify({'success': True, 'roles': roles})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/roles/create', methods=['POST'])
+def admin_create_role():
+    """إنشاء صلاحية جديدة"""
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return jsonify({'error': 'غير مصرح'}), 403
+    
+    try:
+        data = request.json
+        name = data.get('name')
+        description = data.get('description')
+        permissions = data.get('permissions', {})
+        
+        if not name:
+            return jsonify({'error': 'اسم الصلاحية مطلوب'}), 400
+        
+        success, message = permission_manager.create_role(name, description, permissions)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>/roles', methods=['POST'])
+def admin_assign_role(user_id):
+    """إسناد صلاحية لمستخدم"""
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return jsonify({'error': 'غير مصرح'}), 403
+    
+    try:
+        data = request.json
+        role_id = data.get('role_id')
+        
+        if not role_id:
+            return jsonify({'error': 'معرف الصلاحية مطلوب'}), 400
+        
+        success, message = permission_manager.assign_role_to_user(user_id, role_id)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ========================================
+# File Routes
+# ========================================
+
 @app.route('/')
 def index() -> Any:
     """صفحة الموقع الرئيسية"""
-    return send_from_directory('.', 'index.html')
+    return send_from_directory('.', 'index_v3.html')
 
 @app.route('/stream/<file_id>')
 def stream_file(file_id: str) -> Tuple[Any, int]:
-    """
-    بث الملف مع إجبار المتصفح على العرض (Inline) والتنظيف التلقائي
-    
-    Args:
-        file_id: معرف الملف في تليجرام
-        
-    Returns:
-        استجابة بث الملف أو رسالة خطأ
-    """
+    """بث الملف مع دعم المعاينة في المتصفح"""
     try:
-        # 1. جلب معلومات الملف من تليجرام
+        # جلب معلومات الملف من تليجرام
         r = requests.get(f"{TELEGRAM_API_URL}/getFile?file_id={file_id}")
         
-        # 🚨 التنظيف الذاتي الصارم: أي خطأ من تليجرام يعني الملف غير موجود
         if r.status_code != 200 or not r.json().get('ok'):
             logger.warning(f"⚠️ الملف {file_id} غير موجود في تليجرام. جاري الحذف...")
-            # حذف فوري من Supabase
             supabase.table('files').delete().eq('telegram_file_id', file_id).execute()
             return "File deleted", 404
             
         file_path = r.json()['result']['file_path']
         download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
         
-        # 2. طلب البث من تليجرام
+        # طلب البث من تليجرام
         req = requests.get(download_url, stream=True)
-        
-        # الحصول على نوع الملف الحقيقي (MIME Type)
         content_type = req.headers.get('content-type')
         
-        # 3. إرسال الاستجابة مع إجبار العرض (inline)
+        # تحديد طريقة العرض (inline للمعاينة، attachment للتحميل)
+        # PDF يجب أن يعرض inline للمعاينة
+        disposition = "inline" if content_type and (
+            content_type.startswith('image/') or 
+            content_type.startswith('video/') or 
+            content_type == 'application/pdf'
+        ) else "attachment"
+        
         return Response(
             stream_with_context(req.iter_content(chunk_size=1024 * 1024)),
             mimetype=content_type,
             headers={
-                "Content-Disposition": "inline",
+                "Content-Disposition": disposition,
                 "Cache-Control": "public, max-age=3600"
             }
         )
@@ -127,19 +347,58 @@ def stream_file(file_id: str) -> Tuple[Any, int]:
         logger.error(f"❌ خطأ في البث: {e}")
         return str(e), 500
 
-@app.route('/upload', methods=['POST'])
-def upload_file() -> Tuple[Any, int]:
-    """
-    رفع ملف جديد إلى تليجرام وحفظه في قاعدة البيانات
+@app.route('/api/files', methods=['GET'])
+def get_files():
+    """الحصول على قائمة الملفات مع Pagination"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'غير مصرح'}), 401
     
-    Returns:
-        استجابة JSON بنجاح أو فشل العملية
-    """
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 30))
+        search = request.args.get('search', '')
+        
+        start = (page - 1) * per_page
+        end = start + per_page - 1
+        
+        query = supabase.table('files').select('*', count='exact')
+        
+        # البحث
+        if search:
+            query = query.ilike('file_name', f'%{search}%')
+        
+        # الترتيب والتقسيم
+        result = query.order('created_at', desc=True).range(start, end).execute()
+        
+        return jsonify({
+            'success': True,
+            'files': result.data,
+            'total': result.count,
+            'page': page,
+            'per_page': per_page
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/upload', methods=['POST'])
+def upload_file() -> Tuple[Any, int]:
+    """رفع ملف جديد"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'غير مصرح'}), 401
+    
+    # التحقق من صلاحية الرفع
+    if not permission_manager.check_permission(user['user_id'], 'upload'):
+        return jsonify({'error': 'ليس لديك صلاحية رفع الملفات'}), 403
+    
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file'}), 400
         
         file = request.files['file']
+        caption = request.form.get('caption', '')
+        
         if file.filename == '':
             return jsonify({'error': 'Empty filename'}), 400
         
@@ -158,13 +417,20 @@ def upload_file() -> Tuple[Any, int]:
             endpoint = 'sendAudio'
         
         files = {endpoint.replace('send', '').lower(): (filename, file_data, mime_type)}
-        data = {'chat_id': TARGET_GROUP_ID, 'caption': filename}
+        
+        # إضافة توقيع الرافع في Caption
+        uploader_tag = f"\n\n📤 رفع بواسطة: {user['full_name']}"
+        full_caption = (caption + uploader_tag) if caption else uploader_tag.strip()
+        
+        data = {'chat_id': TARGET_GROUP_ID, 'caption': full_caption}
         
         resp = requests.post(f"{TELEGRAM_API_URL}/{endpoint}", files=files, data=data)
         if not resp.ok:
             raise Exception(f"Telegram Error: {resp.text}")
             
         result = resp.json()['result']
+        
+        # استخراج file_id
         if 'document' in result:
             fid = result['document']['file_id']
         elif 'photo' in result:
@@ -186,52 +452,58 @@ def upload_file() -> Tuple[Any, int]:
             'mime_type': mime_type,
             'telegram_file_id': fid,
             'message_id': result['message_id'],
+            'caption': caption,
+            'uploaded_by': user['user_id'],
             'created_at': datetime.utcnow().isoformat()
         }
         
         supabase.table('files').insert(db_data).execute()
-        logger.info(f"✅ تم رفع الملف: {filename} ({file_size:,} bytes)")
+        logger.info(f"✅ تم رفع الملف: {filename} بواسطة {user['full_name']}")
         return jsonify({'success': True})
         
     except Exception as e:
         logger.error(f"❌ فشل الرفع: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/delete_file', methods=['POST'])
+@app.route('/api/delete_file', methods=['POST'])
 def delete_file() -> Tuple[Any, int]:
-    """
-    حذف ملف من تليجرام وقاعدة البيانات
+    """حذف ملف"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'غير مصرح'}), 401
     
-    Returns:
-        استجابة JSON بنجاح أو فشل العملية
-    """
+    # التحقق من صلاحية الحذف
+    if not permission_manager.check_permission(user['user_id'], 'delete'):
+        return jsonify({'error': 'ليس لديك صلاحية حذف الملفات'}), 403
+    
     try:
         data = request.json
         msg_id = data.get('message_id')
         db_id = data.get('id')
         
         if msg_id:
+            # حذف من تليجرام
             requests.post(f"{TELEGRAM_API_URL}/deleteMessage", json={
                 'chat_id': TARGET_GROUP_ID, 'message_id': msg_id
             })
 
         if db_id:
+            # حذف من قاعدة البيانات
             supabase.table('files').delete().eq('id', db_id).execute()
-            logger.info(f"🗑️ تم حذف الملف: ID={db_id}")
+            logger.info(f"🗑️ تم حذف الملف: ID={db_id} بواسطة {user['full_name']}")
             
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"❌ فشل الحذف: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/cleanup', methods=['POST'])
+@app.route('/api/cleanup', methods=['POST'])
 def cleanup() -> Tuple[Any, int]:
-    """
-    تنظيف الملفات المحذوفة من تليجرام (يدوي)
+    """تنظيف الملفات المحذوفة"""
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return jsonify({'error': 'غير مصرح'}), 403
     
-    Returns:
-        استجابة JSON بعدد الملفات المحذوفة
-    """
     try:
         logger.info("🧹 بدء عملية التنظيف اليدوي...")
         result = supabase.table('files').select('id, telegram_file_id').execute()
@@ -245,9 +517,7 @@ def cleanup() -> Tuple[Any, int]:
             if r.status_code != 200 or not r.json().get('ok'):
                 supabase.table('files').delete().eq('id', file['id']).execute()
                 deleted_count += 1
-                logger.info(f"🗑️ تم حذف ملف محذوف: {file_id}")
             
-            # انتظار قصير لتجنب Rate Limiting
             time.sleep(0.3)
         
         logger.info(f"✅ انتهت عملية التنظيف. تم حذف {deleted_count} ملف")
@@ -259,19 +529,14 @@ def cleanup() -> Tuple[Any, int]:
 @app.route('/health')
 def health() -> Any:
     """فحص صحة الخادم"""
-    return jsonify({'status': 'ok'})
+    return jsonify({'status': 'ok', 'version': '3.0'})
 
 def cleanup_deleted_files() -> None:
-    """
-    تنظيف دوري تلقائي للملفات المحذوفة من تليجرام
-    يعمل في الخلفية كل 6 ساعات
-    """
-    # انتظار 5 دقائق قبل البدء (لإعطاء الخادم وقت للتشغيل)
+    """تنظيف دوري تلقائي للملفات المحذوفة"""
     time.sleep(5 * 60)
     
     while True:
         try:
-            logger.info("=" * 60)
             logger.info("🧹 بدء عملية التنظيف التلقائي...")
             
             result = supabase.table('files').select('id, telegram_file_id, file_name').execute()
@@ -280,39 +545,33 @@ def cleanup_deleted_files() -> None:
             deleted_count = 0
             for file in files:
                 file_id = file['telegram_file_id']
-                
-                # التحقق من وجود الملف في تليجرام
                 r = requests.get(f"{TELEGRAM_API_URL}/getFile?file_id={file_id}")
                 
-                # إذا كان الملف غير موجود، احذفه من قاعدة البيانات
                 if r.status_code != 200 or not r.json().get('ok'):
                     supabase.table('files').delete().eq('id', file['id']).execute()
                     deleted_count += 1
                     logger.info(f"🗑️ تم حذف: {file.get('file_name', 'unknown')}")
                 
-                # انتظار قصير لتجنب Rate Limiting
                 time.sleep(0.5)
             
             logger.info(f"✅ انتهت عملية التنظيف التلقائي. تم حذف {deleted_count} ملف")
-            logger.info("⏰ التنظيف القادم بعد 6 ساعات")
-            logger.info("=" * 60)
             
         except Exception as e:
             logger.error(f"❌ خطأ في التنظيف التلقائي: {e}")
         
-        # تكرار كل 6 ساعات
         time.sleep(6 * 60 * 60)
 
 if __name__ == '__main__':
-    # بدء خيط التنظيف التلقائي في الخلفية
+    # بدء خيط التنظيف التلقائي
     cleanup_thread = threading.Thread(target=cleanup_deleted_files, daemon=True)
     cleanup_thread.start()
+    
     logger.info("=" * 60)
-    logger.info("🚀 بدء تشغيل خادم الأرشيف...")
-    logger.info("🧹 تم تفعيل التنظيف التلقائي (كل 6 ساعات)")
-    logger.info(f"🔗 Supabase URL: {SUPABASE_URL}")
+    logger.info("🚀 بدء تشغيل خادم الأرشيف v3.0...")
+    logger.info("🔐 نظام المصادقة: مفعّل")
+    logger.info("🛡️ نظام الصلاحيات RBAC: مفعّل")
+    logger.info("🧹 التنظيف التلقائي: مفعّل")
     logger.info("=" * 60)
     
-    # تشغيل الخادم
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
