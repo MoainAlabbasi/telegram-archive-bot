@@ -6,6 +6,7 @@ Telegram File Archive Bot v3.0
 """
 
 import logging
+from telegram import Update
 from telegram.ext import Application, MessageHandler, filters
 
 from supabase import create_client
@@ -49,13 +50,8 @@ def create_bot_application() -> Application:
         )
     )
     
-    # معالج الرسائل المحذوفة (إذا كان مدعوماً)
-    application.add_handler(
-        MessageHandler(
-            filters.StatusUpdate.DELETED_MESSAGES,
-            deletion_handler.handle_deletion
-        )
-    )
+    # ملاحظة: معالج الرسائل المحذوفة غير مدعوم في الإصدار الحالي
+    # يمكن تفعيله لاحقاً إذا تم دعمه
     
     logger.info("✅ تم إعداد البوت بنجاح")
     return application

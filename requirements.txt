@@ -1,22 +1,22 @@
 # Telegram Bot
-python-telegram-bot>=20.0,<21.0
+python-telegram-bot
 
 # Database
-supabase>=2.0,<3.0
+supabase
 
 # Environment Variables
-python-dotenv>=1.0,<2.0
+python-dotenv
 
 # Web Server
-flask>=3.0,<4.0
-flask-cors>=4.0,<5.0
+flask
+flask-cors
 
 # HTTP Requests
-requests>=2.31,<3.0
+requests
 
 # Authentication & Security
-bcrypt>=4.0,<5.0
-PyJWT>=2.8,<3.0
+bcrypt
+PyJWT
 
-# Email
-secure-smtplib>=0.1.1
+# Email (optional - for OTP)
+# secure-smtplib
