@@ -11,7 +11,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, render_template
 from flask_cors import CORS
 import requests
 from supabase import create_client, Client
@@ -23,7 +23,21 @@ from ..utils.email import email_service
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, template_folder='../templates', static_folder='../static')
+# تحديد المسار المطلق للمجلدات بشكل صارم
+# __file__ = /app/src/api/main.py (في Railway)
+# BASE_DIR = /app (المجلد الجذر للمشروع)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
+
+# طباعة المسارات للتأكد (مهم للتصحيح)
+logger.info(f"📁 BASE_DIR: {BASE_DIR}")
+logger.info(f"📄 TEMPLATE_DIR: {TEMPLATE_DIR}")
+logger.info(f"📄 Templates exist: {os.path.exists(TEMPLATE_DIR)}")
+if os.path.exists(TEMPLATE_DIR):
+    logger.info(f"📄 Template files: {os.listdir(TEMPLATE_DIR)}")
+
+app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 
@@ -281,7 +295,17 @@ def admin_assign_role(user_id):
 @app.route('/')
 def index() -> Any:
     """صفحة الموقع الرئيسية"""
-    return send_from_directory(app.template_folder, 'index.html')
+    try:
+        logger.info("🏠 طلب الصفحة الرئيسية")
+        return render_template('index.html')
+    except Exception as e:
+        logger.error(f"❌ خطأ في عرض الصفحة الرئيسية: {e}")
+        # حل احتياطي: إرجاع HTML مباشر
+        index_path = os.path.join(TEMPLATE_DIR, 'index.html')
+        if os.path.exists(index_path):
+            with open(index_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        return f"<h1>Error</h1><p>{str(e)}</p><p>TEMPLATE_DIR: {TEMPLATE_DIR}</p>", 500
 
 @app.route('/stream/<file_id>')
 def stream_file(file_id: str) -> Tuple[Any, int]:
