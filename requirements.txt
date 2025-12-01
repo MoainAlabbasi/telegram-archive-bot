@@ -10,6 +10,7 @@ python-dotenv
 # Web Server
 flask
 flask-cors
+gunicorn
 
 # HTTP Requests
 requests

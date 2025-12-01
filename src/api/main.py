@@ -281,7 +281,7 @@ def admin_assign_role(user_id):
 @app.route('/')
 def index() -> Any:
     """صفحة الموقع الرئيسية"""
-    return send_from_directory('.', 'index_v3.html')
+    return send_from_directory(app.template_folder, 'index.html')
 
 @app.route('/stream/<file_id>')
 def stream_file(file_id: str) -> Tuple[Any, int]:
