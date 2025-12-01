@@ -1,255 +1,191 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام الأرشيف</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>{{ app_name }} - لوحة التحكم</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --primary: #6366f1; --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
-            --bg-dark: #0f172a; --bg-card: rgba(30, 41, 59, 0.7); --text-light: #f1f5f9;
-            --text-muted: #94a3b8; --border: rgba(148, 163, 184, 0.2);
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
+        
         body {
-            font-family: 'Cairo', sans-serif;
-            background: linear-gradient(135deg, #020617 0%, #0f172a 100%);
-            color: var(--text-light); min-height: 100vh; display: flex; flex-direction: column;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
         }
+        
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 3rem;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        
         .header {
-            background: var(--bg-card); backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border); padding: 15px 20px;
-            display: flex; justify-content: space-between; align-items: center;
-            position: sticky; top: 0; z-index: 100;
+            text-align: center;
+            margin-bottom: 3rem;
         }
-        .brand { display: flex; align-items: center; gap: 12px; }
-        .brand i { font-size: 32px; background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .brand h1 { font-size: 20px; font-weight: 800; }
-        .header-actions { display: flex; gap: 10px; }
-        .header-btn {
-            background: var(--primary); color: white; border: none;
-            width: 42px; height: 42px; border-radius: 12px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            transition: all 0.3s; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        
+        .emoji {
+            font-size: 5rem;
+            margin-bottom: 1rem;
+            animation: bounce 2s infinite;
         }
-        .header-btn:hover { transform: translateY(-2px); }
-        .main-content { flex: 1; padding: 20px; overflow-y: auto; }
-        .search-wrapper { position: relative; max-width: 600px; margin: 0 auto 20px; }
-        .search-input {
-            width: 100%; padding: 15px 50px 15px 20px;
-            background: var(--bg-card); backdrop-filter: blur(20px);
-            border: 1px solid var(--border); border-radius: 16px;
-            color: var(--text-light); font-family: inherit; font-size: 16px;
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
         }
-        .search-input:focus { outline: none; border-color: var(--primary); }
-        .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-        .file-card {
-            background: var(--bg-card); backdrop-filter: blur(20px);
-            border: 1px solid var(--border); border-radius: 16px;
-            overflow: hidden; transition: all 0.3s; cursor: pointer;
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
         }
-        .file-card:hover { transform: translateY(-5px); border-color: var(--primary); }
-        .file-preview-box {
-            aspect-ratio: 1; background: rgba(15, 23, 42, 0.5);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 50px; color: var(--text-muted); position: relative;
+        
+        .version {
+            font-size: 0.9rem;
+            opacity: 0.8;
         }
-        .file-preview-media { width: 100%; height: 100%; object-fit: cover; }
-        .file-info { padding: 15px; background: rgba(15, 23, 42, 0.5); }
-        .file-name { font-size: 14px; font-weight: 700; margin-bottom: 8px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .file-actions { display: flex; gap: 8px; }
-        .action-btn {
-            flex: 1; border: none; border-radius: 8px; padding: 8px;
-            cursor: pointer; transition: all 0.3s; font-weight: 600;
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 2rem;
+            border-radius: 15px;
+            margin: 2rem 0;
         }
-        .btn-view { background: rgba(99, 102, 241, 0.1); color: var(--primary); }
-        .btn-delete { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
-        .modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.9); display: none; align-items: center;
-            justify-content: center; z-index: 200;
+        
+        .status-badge {
+            display: inline-block;
+            background: #10b981;
+            padding: 0.5rem 1.5rem;
+            border-radius: 25px;
+            font-weight: bold;
+            margin-top: 1rem;
+            animation: pulse 2s infinite;
         }
-        .modal.active { display: flex; }
-        .modal-content { max-width: 90%; max-height: 90%; }
-        .toast {
-            position: fixed; bottom: 20px; right: 20px; background: var(--bg-card);
-            backdrop-filter: blur(20px); padding: 15px 20px; border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); z-index: 1000;
-            display: none; animation: slideIn 0.3s;
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
-        @keyframes slideIn { from { transform: translateX(400px); } to { transform: translateX(0); } }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .feature {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            border-radius: 10px;
+            text-align: center;
+            transition: transform 0.3s;
+        }
+        
+        .feature:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .api-links {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .api-link {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            margin: 0.5rem;
+            text-decoration: none;
+            color: white;
+            transition: background 0.3s;
+        }
+        
+        .api-link:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            opacity: 0.7;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="brand">
-            <i class="fa-brands fa-telegram"></i>
-            <h1>نظام الأرشيف</h1>
+    <div class="container">
+        <div class="header">
+            <div class="emoji">🤖</div>
+            <h1>{{ app_name }}</h1>
+            <p class="version">الإصدار {{ version }}</p>
         </div>
-        <div class="header-actions">
-            <button class="header-btn" onclick="toggleUploadModal()" title="رفع ملف">
-                <i class="fa-solid fa-plus"></i>
-            </button>
-            <button class="header-btn" onclick="logout()" title="تسجيل الخروج">
-                <i class="fa-solid fa-right-from-bracket"></i>
-            </button>
+        
+        <div class="status-card">
+            <h2>📊 حالة النظام</h2>
+            <div class="status-badge">
+                ✅ {{ status|upper }}
+            </div>
+            <p style="margin-top: 1rem;">جميع الأنظمة تعمل بشكل طبيعي</p>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">💬</div>
+                <h3>أرشفة الرسائل</h3>
+                <p>حفظ جميع المحادثات</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔍</div>
+                <h3>البحث السريع</h3>
+                <p>العثور على أي رسالة</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📦</div>
+                <h3>التصدير</h3>
+                <p>تصدير البيانات بسهولة</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <h3>الأمان</h3>
+                <p>تشفير كامل للبيانات</p>
+            </div>
+        </div>
+        
+        <div class="api-links">
+            <h3>🔗 روابط API:</h3>
+            <a href="/health" class="api-link">Health Check</a>
+            <a href="/api/status" class="api-link">Bot Status</a>
+            <a href="/api/stats" class="api-link">Statistics</a>
+        </div>
+        
+        <div class="footer">
+            <p>تم التطوير بواسطة فريق Telegram Archive Bot</p>
+            <p>© 2025 جميع الحقوق محفوظة</p>
         </div>
     </div>
-
-    <div class="main-content">
-        <div class="search-wrapper">
-            <input type="text" class="search-input" id="search" placeholder="🔍 ابحث عن ملف...">
-        </div>
-        <div id="files-container" class="files-grid"></div>
-        <div id="loading" style="text-align: center; padding: 40px;">
-            <i class="fa-solid fa-spinner fa-spin" style="font-size: 40px;"></i>
-        </div>
-    </div>
-
-    <div id="viewer-modal" class="modal" onclick="closeViewer()">
-        <div id="viewer-content"></div>
-    </div>
-
-    <div id="toast" class="toast"></div>
-
-    <script>
-        const API_BASE = '';
-        let sessionToken = localStorage.getItem('session_token');
-        let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-
-        if (!sessionToken) {
-            window.location.href = '/login.html';
-        }
-
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.style.display = 'block';
-            toast.style.borderLeft = `4px solid var(--${type})`;
-            setTimeout(() => toast.style.display = 'none', 3000);
-        }
-
-        async function loadFiles() {
-            try {
-                const response = await fetch(`${API_BASE}/api/files`, {
-                    headers: { 'Authorization': sessionToken }
-                });
-                const data = await response.json();
-                
-                if (data.success) {
-                    displayFiles(data.files);
-                } else {
-                    showToast('فشل تحميل الملفات', 'danger');
-                }
-            } catch (error) {
-                showToast('خطأ في الاتصال', 'danger');
-            } finally {
-                document.getElementById('loading').style.display = 'none';
-            }
-        }
-
-        function displayFiles(files) {
-            const container = document.getElementById('files-container');
-            container.innerHTML = '';
-            
-            files.forEach(file => {
-                const streamUrl = `/stream/${file.telegram_file_id}`;
-                let previewHTML = '';
-                
-                if (file.file_type === 'image') {
-                    previewHTML = `<img src="${streamUrl}" class="file-preview-media" loading="lazy">`;
-                } else if (file.file_type === 'video') {
-                    previewHTML = `<video src="${streamUrl}#t=0.1" class="file-preview-media" muted></video>`;
-                } else {
-                    previewHTML = `<i class="fa-solid fa-file"></i>`;
-                }
-                
-                const card = document.createElement('div');
-                card.className = 'file-card';
-                card.innerHTML = `
-                    <div class="file-preview-box" onclick="openViewer('${file.file_type}', '${streamUrl}')">
-                        ${previewHTML}
-                    </div>
-                    <div class="file-info">
-                        <div class="file-name">${file.file_name}</div>
-                        <div class="file-actions">
-                            <button onclick="openViewer('${file.file_type}', '${streamUrl}')" class="action-btn btn-view">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            <button onclick="deleteFile(${file.id}, ${file.message_id})" class="action-btn btn-delete">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
-        }
-
-        function openViewer(type, url) {
-            const modal = document.getElementById('viewer-modal');
-            const content = document.getElementById('viewer-content');
-            
-            if (type === 'image') {
-                content.innerHTML = `<img src="${url}" class="modal-content">`;
-            } else if (type === 'video') {
-                content.innerHTML = `<video src="${url}" class="modal-content" controls autoplay></video>`;
-            } else {
-                window.open(url, '_blank');
-                return;
-            }
-            
-            modal.classList.add('active');
-        }
-
-        function closeViewer() {
-            document.getElementById('viewer-modal').classList.remove('active');
-        }
-
-        async function deleteFile(id, messageId) {
-            if (!confirm('هل أنت متأكد من حذف هذا الملف؟')) return;
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/delete_file`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': sessionToken
-                    },
-                    body: JSON.stringify({ id, message_id: messageId })
-                });
-                
-                if (response.ok) {
-                    showToast('تم حذف الملف بنجاح', 'success');
-                    loadFiles();
-                } else {
-                    showToast('فشل حذف الملف', 'danger');
-                }
-            } catch (error) {
-                showToast('خطأ في الاتصال', 'danger');
-            }
-        }
-
-        function logout() {
-            localStorage.removeItem('session_token');
-            localStorage.removeItem('user');
-            window.location.href = '/login.html';
-        }
-
-        document.getElementById('search').oninput = (e) => {
-            const term = e.target.value.toLowerCase();
-            const cards = document.querySelectorAll('.file-card');
-            cards.forEach(card => {
-                const name = card.querySelector('.file-name').textContent.toLowerCase();
-                card.style.display = name.includes(term) ? 'block' : 'none';
-            });
-        };
-
-        loadFiles();
-    </script>
 </body>
 </html>

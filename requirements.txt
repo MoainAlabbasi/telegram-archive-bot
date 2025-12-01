@@ -1,22 +1,16 @@
-# Telegram Bot
-python-telegram-bot
+# المتطلبات الأساسية للمشروع
 
-# Database
-supabase
+# Flask للـ API
+Flask==3.0.0
+Werkzeug==3.0.1
 
-# Environment Variables
-python-dotenv
+# python-telegram-bot v20+ (مع دعم async)
+python-telegram-bot==20.7
 
-# Web Server
-flask
-flask-cors
+# مكتبات إضافية
+python-dotenv==1.0.0
+requests==2.31.0
 
-# HTTP Requests
-requests
-
-# Authentication & Security
-bcrypt
-PyJWT
-
-# Email (optional - for OTP)
-# secure-smtplib
+# قاعدة البيانات (اختياري)
+# SQLAlchemy==2.0.23
+# psycopg2-binary==2.9.9
